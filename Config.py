@@ -3,13 +3,13 @@ import platform
 envir_system = platform.system()
 print("[npc report] your system is ",envir_system)
 
-batch_size = 10
+batch_size = 300
 read_data_num = 100
 
 if envir_system == "Windows":
     envir_path = "."
 else:
-    envir_path = "/content/drive/MyDrive/FL-ABAS-TOPIC/"
+    envir_path = "/content/drive/MyDrive/Fed_MSCNN"
     batch_size = 1000
     read_data_num = -1
 

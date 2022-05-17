@@ -52,18 +52,21 @@ class CNNnet(nn.Module):
 
     def Test(net,dataset):
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        print("[npc report] test: your device is ",device)
+        # print("[npc report] test: your device is ",device)
         net.device = device
         net.to(device)
 
+        acu = 0
         # last_loss,count_last_loss = 10,0
         for x,y in dataset:
             x,y = x.unsqueeze(1).to(device),y.to(device)
             o = net(x)
+            if torch.argmax(o) == torch.argmax(y): 
+                acu += 1
             
-        return net
+        return 100 * acu / len(dataset)
 
-    def Train(net,dataset):
+    def Train(net,dataset,testdataset = None):
         from torch.utils.data import DataLoader
         # loader = DataLoader(dataset, batch_size = Config.batch_size, shuffle=True)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -80,6 +83,8 @@ class CNNnet(nn.Module):
             t_losses = []
             count = 0
             acu = 0
+
+
             for x,y in dataset:
                 x,y = x.unsqueeze(1).to(device),y.to(device)
                 o = net(x)
@@ -100,7 +105,8 @@ class CNNnet(nn.Module):
                     print("[npc report]","echo:",t,
                     "(%d/%d[%2.2f%%])"%(count,len(dataset),100*count/len(dataset)),
                         "loss:",mean_losses[-1],
-                        "acu:",100*acu/count
+                        "train_acu:",100*acu/count,
+                        "test_acu","None" if testdataset == None else net.Test(testdataset)
                         )
 
             net.save()

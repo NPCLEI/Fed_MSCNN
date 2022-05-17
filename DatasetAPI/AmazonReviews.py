@@ -43,12 +43,13 @@ class CsvDataset(torchDataset):
         print()
 
 class PdCsvDataset(torchDataset):
-    def __init__(self,csv_path = "../dataset.csv"):
+    def __init__(self,csv_path = None):
         super(PdCsvDataset, self).__init__()
-        self.csv = pd.read_csv(csv_path)
         self.dataidx = []
         self.labels = []
-        self.statistics()
+        if csv_path != None:
+            self.csv = pd.read_csv(csv_path)
+            self.statistics()
 
     def statistics(self,read_num = 1000,cls = "reviews.doRecommend"):
         tabu = {}
@@ -81,11 +82,19 @@ class PdCsvDataset(torchDataset):
 
 
     def Split(self,testPor = 0.3):
-        import copy
-        train = copy.copy(self)
-        spl = int(len(self)* 0.5 * testPor)
-        train.labels = self.labels[:spl] + self.labels[int(len(self)* 0.5):spl]
-        train.dataidx = self.dataidx[:spl] + self.dataidx[int(len(self)* 0.5):spl]
+        train,test = PdCsvDataset(None),PdCsvDataset(None)
+        half = int(len(self)* 0.5) # 1000
+        spl = int(half * (1 -testPor)) # 700 
+        lg = len(self) # 2000
+        train.labels = self.labels[:spl] + self.labels[half:lg - spl]
+        train.dataidx = self.dataidx[:spl] + self.dataidx[half:lg - spl]
+        train.csv = self.csv
+
+        test.labels = self.labels[spl:half] + self.labels[-(half - spl):]
+        test.dataidx = self.dataidx[spl:half] + self.dataidx[-(half - spl):]
+        test.csv = self.csv
+
+        return train,test
 
 if __name__ == "__main__":
     count = 0
