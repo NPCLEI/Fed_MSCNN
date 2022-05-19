@@ -1,50 +1,57 @@
 import torch
 import torch.nn as nn
 import Config
-
+from torch.utils.data import DataLoader
+import utils
+import math
 
 # 定义网络结构
 class CNNnet(nn.Module):
-    def __init__(self):
+    def __init__(self,name = ''):
         super(CNNnet,self).__init__()
+        self.name = name
         self.conv1 = nn.Sequential(
-            nn.Conv2d(1,1,1,padding=0),
-            nn.MaxPool2d(3),
+            nn.Conv2d(1,1,(1,768),padding=0),
+            nn.MaxPool2d((1,1)),
+            nn.Flatten(),
+            nn.Dropout2d(0.1),
             nn.ReLU()
         )
         self.conv2 = nn.Sequential(
-            nn.Conv2d(1,1,2,padding=0),
-            nn.MaxPool2d(3),
+            nn.Conv2d(1,1,(2,768),padding=0),
+            nn.MaxPool2d((2,1)),
+            nn.Flatten(),
+            nn.Dropout2d(0.1),
             nn.ReLU()
         )
         self.conv3 = nn.Sequential(
-            nn.Conv2d(1,1,3,padding=0),
-            nn.MaxPool2d(3),
+            nn.Conv2d(1,1,(3,768),padding=0),
+            nn.MaxPool2d((3,1)),
+            nn.Flatten(),
+            nn.Dropout2d(0.1),
             nn.ReLU()
         )
-        self.mlp_hidden1 = nn.Linear(4096,4096)
-        self.mlp = nn.Linear(4096,2)
+
+        self.mlpInLen = 937
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(self.mlpInLen),
+            nn.Linear(self.mlpInLen,512),
+            nn.Dropout2d(0.1),
+            nn.ReLU(),
+            nn.Linear(512,2)
+        )
 
     def forward(self, x):
-        x1,x2,x3 = self.conv1(x),self.conv2(x),self.conv3(x)
-        #print(x1.size(),x2.size(),x3.size())
-        x1,x2,x3 = torch.flatten(x1),torch.flatten(x2),torch.flatten(x3)
-        padding = 4096 - (x1.shape[0] + x2.shape[0] + x3.shape[0])
-        if padding > 0:
-            catx = torch.cat([x1,x2,x3,torch.zeros(padding).to(Config.device)],dim=0)
-        else:
-            catx = torch.cat([x1,x2,x3],dim=0)[:4096]
-        # print(catx.shape)
 
-        x = self.mlp_hidden1(catx)
-        x = torch.relu(x)
-        x = self.mlp(x)
+        x1,x2,x3 = self.conv1(x),self.conv2(x),self.conv3(x)
+        catx = torch.cat([x1,x2,x3],dim=1)
+        x = self.mlp(catx)
         x = torch.softmax(x,dim=0)
         return x
 
     def save(self,info = ""):
         import pickle
-        f_name = "%s/ModelPickle/mscnn%s.pickle"%(Config.envir_path,info)
+        f_name = "%s/ModelPickle/mscnn_%s.pickle"%(Config.envir_path,info)
         self.to(torch.device("cpu"))
         with open(f_name, 'wb+') as net_file:
             pickle.dump(self,net_file)
@@ -55,43 +62,60 @@ class CNNnet(nn.Module):
         # print("[npc report] test: your device is ",device)
         net.device = device
         net.to(device)
+        loader = DataLoader(dataset, batch_size = Config.batch_size, shuffle=True,collate_fn=dataset.collate_func)
+        loss_func = torch.nn.BCELoss()
 
         acu = 0
+        counter = {}
+        batch_count = 0
         # last_loss,count_last_loss = 10,0
-        for x,y in dataset:
-            x,y = x.unsqueeze(1).to(device),y.to(device)
+        for x,y in loader:
+            x,y = x.to(device),y.to(device)
             o = net(x)
-            if torch.argmax(o) == torch.argmax(y): 
-                acu += 1
-            
-        return 100 * acu / len(dataset)
+            # print(y)
+            loss = loss_func(o,y)
+            cmp = o.argmax(1).eq(y.argmax(1))
+            acu = utils.Counter(cmp.tolist(),counter)
+            batch_count += 1
+
+            print("[npc report]","testing : echo:",-1,
+                "(%d/%d[%2.2f%%])"%(
+                        batch_count,
+                        len(dataset)/Config.batch_size,
+                        100*batch_count/(len(dataset)/Config.batch_size)
+                    )
+                )
+        
+        acuv = 100*acu[True]/(acu[True]+acu[False])
+        print("[npc report] test: acu_obj:",acu,"acu :",acuv)
+        return acuv
 
     def Train(net,dataset,testdataset = None):
-        from torch.utils.data import DataLoader
-        # loader = DataLoader(dataset, batch_size = Config.batch_size, shuffle=True)
+        loader = DataLoader(dataset, batch_size = Config.batch_size, shuffle=True,collate_fn=dataset.collate_func)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         print("[npc report] your device is ",device)
         net.device = device
         net.to(device)
 
-        optimizer = torch.optim.Adam(net.parameters(), lr=0.00001)
+        optimizer = torch.optim.Adam(net.parameters(), lr=0.001 ,weight_decay = 1e-3)
         loss_func = torch.nn.BCELoss()
         mean_losses = []
+        prgl = math.ceil(len(dataset)/Config.batch_size)
 
         # last_loss,count_last_loss = 10,0
-        for t in range(4):
+        for t in range(100):
             t_losses = []
-            count = 0
-            acu = 0
 
+            batch_count = 0
+            for x,y in loader:
+                x,y = x.to(device),y.to(device)
 
-            for x,y in dataset:
-                x,y = x.unsqueeze(1).to(device),y.to(device)
                 o = net(x)
-                if torch.argmax(o) == torch.argmax(y): 
-                    acu += 1
-                # print(o,y)
-                loss = loss_func(o,y)
+                #计算准确率
+                cmp = o.argmax(1).eq(y.argmax(1))
+                acu = utils.Counter(cmp.tolist(),{True:0,False:0})
+
+                loss = loss_func(o,y)    
                 
                 t_losses.append(loss.tolist())
 
@@ -100,15 +124,22 @@ class CNNnet(nn.Module):
                 optimizer.step()        # apply gradients
                 
                 mean_losses.append(sum(t_losses)/len(t_losses))
-                count += 1
-                if count%Config.batch_size == 0:
-                    print("[npc report]","echo:",t,
-                    "(%d/%d[%2.2f%%])"%(count,len(dataset),100*count/len(dataset)),
+                batch_count += 1
+                print("[npc report]","echo:",t,
+                    "(%d/%d[%2.2f%%])"%(
+                            batch_count,
+                            prgl,
+                            100*batch_count/prgl
+                        ),
                         "loss:",mean_losses[-1],
-                        "train_acu:",100*acu/count,
-                        "test_acu","None" if testdataset == None else net.Test(testdataset)
-                        )
-
-            net.save()
+                        "batch acu:",acu,
+                        "acuv:",100*acu[True]/(acu[True]+acu[False])
+                    )
+            if mean_losses[-1] < 0.001:
+                break
+            T = -1
+            if testdataset != None:
+                T = net.Test(testdataset)
+            net.save("%s[T%2.3f]"%(net.name,T))
 
         return net

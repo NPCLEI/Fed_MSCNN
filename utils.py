@@ -26,3 +26,14 @@ def SaveObj(obj,name = "obj",path = Config.envir_path):
     f_name = "%s/ModelPickle/%s.pickle"%(path,name)
     with open(f_name, 'wb+') as net_file:
         pickle.dump(obj,net_file)
+
+def Counter(lst,res = {True:0,False:0}):
+    for l in lst:
+        if l in res:
+            res[l] += 1
+        else:
+            res[l] = 1
+    return res
+
+if __name__ == "__main__":
+    print(Counter([1,1,1,1,2,3,3,1]))

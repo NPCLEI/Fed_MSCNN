@@ -8,10 +8,12 @@ read_data_num = 100
 
 if envir_system == "Windows":
     envir_path = "."
+    data_path = "D:/Dataset/NLP-SA-Sentence-Level/Amazon"
 else:
-    envir_path = "/content/drive/MyDrive/Fed_MSCNN"
-    batch_size = 1000
-    read_data_num = -1
+    envir_path = "/root/autodl-tmp/Fed_MSCNN"
+    data_path = "/root/autodl-tmp/Dataset"
+    batch_size = 300
+
 
 
 
